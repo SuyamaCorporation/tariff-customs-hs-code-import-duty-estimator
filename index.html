@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>関税・輸入税額試算ツール</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<div class="max-w-5xl mx-auto p-4">
+  <h1 class="text-2xl font-bold text-gray-800 mb-1">関税・輸入税額試算ツール</h1>
+  <p class="text-gray-500 text-sm mb-5">商品カテゴリ・原産国・CIF価格を入力して日本の関税・消費税・ランデッドコストを試算します。（参考値：実際の通関では税関に確認してください）</p>
+
+  <div class="bg-white rounded-xl shadow p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold text-gray-700">商品入力（最大5件）</h2>
+      <button id="addItem" class="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700" aria-label="商品を追加">＋ 商品追加</button>
+    </div>
+    <div id="itemList" class="space-y-3"></div>
+  </div>
+
+  <button id="calcBtn" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-lg hover:bg-indigo-700 mb-4" aria-label="関税を計算">関税を計算</button>
+
+  <div id="resultArea" class="hidden space-y-4">
+    <div class="bg-white rounded-xl shadow p-4">
+      <h2 class="font-semibold text-gray-700 mb-3">試算結果</h2>
+      <div id="resultTable" class="overflow-x-auto"></div>
+    </div>
+    <div class="bg-white rounded-xl shadow p-4">
+      <h2 class="font-semibold text-gray-700 mb-3">EPA特恵税率比較（主要地域）</h2>
+      <div id="epaTable" class="overflow-x-auto"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORIES = [
+  { id:'electronics_consumer', name:'家電・消費者向け電子機器', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } },
+  { id:'electronics_component', name:'電子部品・半導体', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } },
+  { id:'apparel_cotton', name:'衣類（綿製）', rate:{ general:9.1, eu:9.1, asean:0, us:9.1, cn:9.1 } },
+  { id:'apparel_synthetic', name:'衣類（化繊）', rate:{ general:8.8, eu:8.8, asean:0, us:8.8, cn:8.8 } },
+  { id:'footwear', name:'靴・フットウェア', rate:{ general:4.3, eu:4.3, asean:0, us:4.3, cn:4.3 } },
+  { id:'food_processed', name:'加工食品', rate:{ general:9.6, eu:7.0, asean:0, us:9.6, cn:9.6 } },
+  { id:'food_fresh', name:'生鮮食品・農産物', rate:{ general:8.5, eu:4.0, asean:0, us:8.5, cn:8.5 } },
+  { id:'machinery', name:'機械部品・産業機械', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } },
+  { id:'cosmetics', name:'化粧品・美容製品', rate:{ general:3.9, eu:3.9, asean:0, us:3.9, cn:3.9 } },
+  { id:'toys', name:'玩具・ゲーム', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } },
+  { id:'furniture', name:'家具・インテリア', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } },
+  { id:'automotive', name:'自動車部品', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } },
+  { id:'medical_device', name:'医療機器', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } },
+  { id:'pharmaceutical', name:'医薬品', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } },
+  { id:'chemical', name:'化学品・原料', rate:{ general:3.5, eu:3.5, asean:0, us:3.5, cn:3.5 } },
+  { id:'leather', name:'革製品・バッグ', rate:{ general:5.4, eu:5.4, asean:0, us:5.4, cn:5.4 } },
+  { id:'jewelry', name:'宝飾品・アクセサリー', rate:{ general:3.5, eu:3.5, asean:0, us:3.5, cn:3.5 } },
+  { id:'sports', name:'スポーツ用品', rate:{ general:3.0, eu:3.0, asean:0, us:3.0, cn:3.0 } },
+  { id:'music', name:'楽器', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } },
+  { id:'book', name:'書籍・印刷物', rate:{ general:0, eu:0, asean:0, us:0, cn:0 } }
+];
+
+const COUNTRIES = [
+  { id:'cn', name:'中国', region:'cn' },
+  { id:'us', name:'アメリカ', region:'us' },
+  { id:'de', name:'ドイツ', region:'eu' },
+  { id:'fr', name:'フランス', region:'eu' },
+  { id:'it', name:'イタリア', region:'eu' },
+  { id:'gb', name:'イギリス', region:'general' },
+  { id:'th', name:'タイ', region:'asean' },
+  { id:'vn', name:'ベトナム', region:'asean' },
+  { id:'id', name:'インドネシア', region:'asean' },
+  { id:'my', name:'マレーシア', region:'asean' },
+  { id:'ph', name:'フィリピン', region:'asean' },
+  { id:'sg', name:'シンガポール', region:'asean' },
+  { id:'kr', name:'韓国', region:'general' },
+  { id:'in', name:'インド', region:'general' },
+  { id:'au', name:'オーストラリア', region:'general' },
+  { id:'br', name:'ブラジル', region:'general' }
+];
+
+const CONSUMPTION_TAX = 0.10;
+const CUSTOMS_FEE = 2000;
+
+let items = [];
+
+function addItem() {
+  if (items.length >= 5) { alert('最大5件まで追加できます。'); return; }
+  items.push({ catId:'electronics_consumer', countryId:'cn', cif:100000, currency:'JPY' });
+  renderItems();
+}
+
+function removeItem(i) { items.splice(i,1); renderItems(); }
+
+function renderItems() {
+  const list = document.getElementById('itemList');
+  list.innerHTML = '';
+  if (!items.length) {
+    list.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">「商品追加」ボタンで商品を追加してください</p>';
+    return;
+  }
+  items.forEach((item, i) => {
+    const div = document.createElement('div');
+    div.className = 'grid grid-cols-1 sm:grid-cols-4 gap-2 p-3 bg-gray-50 rounded-lg border items-end';
+    div.innerHTML = `
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">商品カテゴリ</label>
+        <select class="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" onchange="items[${i}].catId=this.value" aria-label="商品カテゴリ">
+          ${CATEGORIES.map(c=>`<option value="${c.id}" ${c.id===item.catId?'selected':''}>${c.name}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">原産国</label>
+        <select class="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" onchange="items[${i}].countryId=this.value" aria-label="原産国">
+          ${COUNTRIES.map(c=>`<option value="${c.id}" ${c.id===item.countryId?'selected':''}>${c.name}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">CIF価格</label>
+        <div class="flex gap-1">
+          <select class="border rounded-l-lg px-2 py-1.5 text-sm bg-white focus:outline-none" onchange="items[${i}].currency=this.value" aria-label="通貨">
+            <option value="JPY" ${item.currency==='JPY'?'selected':''}>¥ JPY</option>
+            <option value="USD" ${item.currency==='USD'?'selected':''}>$ USD</option>
+          </select>
+          <input type="number" min="1" value="${item.cif}" class="flex-1 border-t border-b border-r rounded-r-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" onchange="items[${i}].cif=Number(this.value)" aria-label="CIF価格">
+        </div>
+      </div>
+      <div class="flex justify-end">
+        <button onclick="removeItem(${i})" class="bg-red-100 text-red-700 px-3 py-1.5 rounded-lg text-sm hover:bg-red-200" aria-label="削除">削除</button>
+      </div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+const USD_RATE = 150;
+
+document.getElementById('addItem').addEventListener('click', addItem);
+
+document.getElementById('calcBtn').addEventListener('click', () => {
+  if (!items.length) { alert('商品を追加してください。'); return; }
+
+  const results = items.map(item => {
+    const cat = CATEGORIES.find(c=>c.id===item.catId);
+    const country = COUNTRIES.find(c=>c.id===item.countryId);
+    const cifJpy = item.currency === 'USD' ? item.cif * USD_RATE : item.cif;
+    const cifUsd = item.currency === 'USD' ? item.cif : item.cif / USD_RATE;
+    const region = country.region;
+    const rateKey = ['eu','asean','us','cn'].includes(region) ? region : 'general';
+    const tariffRate = cat.rate[rateKey] / 100;
+    const tariffAmt = Math.round(cifJpy * tariffRate);
+    const taxBase = cifJpy + tariffAmt;
+    const consumptionTax = Math.round(taxBase * CONSUMPTION_TAX);
+    const landed = cifJpy + tariffAmt + consumptionTax + CUSTOMS_FEE;
+    return { cat, country, cifJpy, cifUsd, tariffRate: cat.rate[rateKey], tariffAmt, consumptionTax, landed, region: rateKey };
+  });
+
+  const tbody = results.map((r,i) => `
+    <tr class="border-t ${i%2===0?'bg-white':'bg-gray-50'}">
+      <td class="px-3 py-2 text-xs text-gray-700">${r.cat.name}</td>
+      <td class="px-3 py-2 text-xs text-gray-700">${r.country.name}</td>
+      <td class="px-3 py-2 text-xs text-right font-mono">¥${r.cifJpy.toLocaleString()}</td>
+      <td class="px-3 py-2 text-xs text-right font-mono">${r.tariffRate}%</td>
+      <td class="px-3 py-2 text-xs text-right font-mono text-red-600">¥${r.tariffAmt.toLocaleString()}</td>
+      <td class="px-3 py-2 text-xs text-right font-mono text-orange-600">¥${r.consumptionTax.toLocaleString()}</td>
+      <td class="px-3 py-2 text-xs text-right font-mono text-gray-500">¥${CUSTOMS_FEE.toLocaleString()}</td>
+      <td class="px-3 py-2 text-xs text-right font-mono font-bold text-green-700">¥${r.landed.toLocaleString()}<br><span class="text-gray-400 font-normal">$${Math.round(r.landed/USD_RATE).toLocaleString()}</span></td>
+    </tr>`).join('');
+
+  const totalLanded = results.reduce((s,r)=>s+r.landed, 0);
+  const totalTariff = results.reduce((s,r)=>s+r.tariffAmt, 0);
+  const totalTax = results.reduce((s,r)=>s+r.consumptionTax, 0);
+
+  document.getElementById('resultTable').innerHTML = `
+    <table class="w-full text-sm border-collapse min-w-max">
+      <thead><tr class="bg-gray-100 text-gray-600 text-xs">
+        <th class="px-3 py-2 text-left">商品</th><th class="px-3 py-2 text-left">原産国</th>
+        <th class="px-3 py-2 text-right">CIF (JPY)</th><th class="px-3 py-2 text-right">関税率</th>
+        <th class="px-3 py-2 text-right">関税額</th><th class="px-3 py-2 text-right">消費税</th>
+        <th class="px-3 py-2 text-right">通関費</th><th class="px-3 py-2 text-right">ランデッドコスト</th>
+      </tr></thead>
+      <tbody>${tbody}</tbody>
+      <tfoot><tr class="bg-gray-200 font-bold text-sm">
+        <td class="px-3 py-2 text-gray-700" colspan="4">合計</td>
+        <td class="px-3 py-2 text-right text-red-600">¥${totalTariff.toLocaleString()}</td>
+        <td class="px-3 py-2 text-right text-orange-600">¥${totalTax.toLocaleString()}</td>
+        <td class="px-3 py-2 text-right text-gray-500">¥${(CUSTOMS_FEE*results.length).toLocaleString()}</td>
+        <td class="px-3 py-2 text-right text-green-700">¥${totalLanded.toLocaleString()}<br><span class="text-gray-500 text-xs font-normal">$${Math.round(totalLanded/USD_RATE).toLocaleString()}</span></td>
+      </tr></tfoot>
+    </table>`;
+
+  if (results.length > 0) {
+    const r0 = results[0];
+    const regions = ['general','eu','asean','us','cn'];
+    const regionNames = { general:'一般税率', eu:'EU（EPA）', asean:'ASEAN（EPA）', us:'米国（EPA）', cn:'中国（EPA）' };
+    const epaRows = regions.map(reg => {
+      const rate = r0.cat.rate[reg];
+      const amt = Math.round(r0.cifJpy * rate/100);
+      const landed = r0.cifJpy + amt + Math.round((r0.cifJpy+amt)*CONSUMPTION_TAX) + CUSTOMS_FEE;
+      const isApplied = r0.region === reg;
+      return `<tr class="${isApplied?'bg-blue-50 font-semibold':''}">
+        <td class="px-3 py-2 text-xs">${regionNames[reg]}${isApplied?' ← 適用中':''}</td>
+        <td class="px-3 py-2 text-xs text-right">${rate}%</td>
+        <td class="px-3 py-2 text-xs text-right">¥${amt.toLocaleString()}</td>
+        <td class="px-3 py-2 text-xs text-right font-mono font-bold text-green-700">¥${landed.toLocaleString()}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('epaTable').innerHTML = `
+      <p class="text-xs text-gray-500 mb-2">対象: ${r0.cat.name}（CIF ¥${r0.cifJpy.toLocaleString()}）</p>
+      <table class="w-full text-sm border-collapse">
+        <thead><tr class="bg-gray-100 text-xs text-gray-600">
+          <th class="px-3 py-2 text-left">地域/協定</th><th class="px-3 py-2 text-right">関税率</th>
+          <th class="px-3 py-2 text-right">関税額</th><th class="px-3 py-2 text-right">ランデッドコスト</th>
+        </tr></thead><tbody>${epaRows}</tbody>
+      </table>`;
+  }
+
+  document.getElementById('resultArea').classList.remove('hidden');
+});
+
+addItem();
+</script>
+</body>
+</html>
